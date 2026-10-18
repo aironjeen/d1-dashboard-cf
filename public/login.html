@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>D1 Dashboard sign in</title><meta name="robots" content="noindex"><meta name="theme-color" content="#0e1116"><link rel="manifest" href="/manifest.json"><link rel="icon" href="/icon.svg">
+<style>
+*{box-sizing:border-box} body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0e12;color:#ece9e2;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:1rem}
+.box{width:100%;max-width:23rem;background:#151a21;border:1px solid #262d38;border-radius:14px;padding:1.6rem}
+h1{font-size:1.35rem;margin:0 0 .2rem} h1 span{color:#f2a93b} p{color:#8c95a4;font-size:.9rem;margin:.2rem 0 1.2rem}
+label{display:block;font-size:.8rem;color:#8c95a4;margin:.9rem 0 .3rem} input{width:100%;font:inherit;font-size:1rem;padding:.7rem .8rem;background:#1b212a;color:#ece9e2;border:1px solid #262d38;border-radius:9px}
+input:focus{outline:2px solid #2fd4bf;outline-offset:1px} button{width:100%;margin-top:1.2rem;font:inherit;font-weight:700;font-size:1rem;padding:.8rem;border:0;border-radius:9px;background:#f2a93b;color:#111;cursor:pointer}
+button:disabled{opacity:.5} .err{color:#ef6b6b;font-size:.85rem;min-height:1.2rem;margin-top:.8rem} .hint{font-size:.78rem;color:#8c95a4;margin-top:.5rem} [hidden]{display:none!important}
+.show{display:flex;gap:.4rem;align-items:center;margin-top:.6rem;font-size:.8rem;color:#8c95a4} .show input{width:auto}
+</style></head><body>
+<div class="box">
+  <h1>D1 <span>Dashboard</span></h1>
+  <form id="f-login">
+    <p>Sign in with the login Jeen gave you.</p>
+    <label for="email">Email</label><input id="email" type="email" autocomplete="username" inputmode="email" required>
+    <label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password" required>
+    <button id="b1" type="submit">Sign in</button>
+  </form>
+  <form id="f-change" hidden>
+    <p>Please choose your own password before you continue.</p>
+    <label for="cur">Password you just used</label><input id="cur" type="password" autocomplete="current-password" required>
+    <label for="n1">New password (at least 10 characters)</label><input id="n1" type="password" autocomplete="new-password" required minlength="10">
+    <label for="n2">New password again</label><input id="n2" type="password" autocomplete="new-password" required minlength="10">
+    <button id="b2" type="submit">Save password</button>
+  </form>
+  <div class="err" id="err" role="alert"></div>
+  <div class="hint">Trouble signing in? Ask Jeen to reset your login.</div>
+</div>
+<script>
+const $=(i)=>document.getElementById(i);
+async function post(url,body){const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});let j={};try{j=await r.json()}catch(e){}return {ok:r.ok,j}}
+function showChange(){$('f-login').hidden=true;$('f-change').hidden=false;$('err').textContent='';$('cur').focus()}
+if(new URLSearchParams(location.search).get('change')){fetch('/api/me').then(r=>r.ok?showChange():null)}
+$('f-login').addEventListener('submit',async(e)=>{e.preventDefault();$('b1').disabled=true;$('err').textContent='';
+  const {ok,j}=await post('/api/login',{email:$('email').value,password:$('pw').value});$('b1').disabled=false;
+  if(!ok){$('err').textContent=j.error||'Could not sign in.';return}
+  if(j.must_change){$('cur').value=$('pw').value;showChange();$('n1').focus()}else location.href='/'});
+$('f-change').addEventListener('submit',async(e)=>{e.preventDefault();$('err').textContent='';
+  if($('n1').value!==$('n2').value){$('err').textContent='The two new passwords do not match.';return}
+  $('b2').disabled=true;const {ok,j}=await post('/api/password',{current:$('cur').value,next:$('n1').value});$('b2').disabled=false;
+  if(!ok){$('err').textContent=j.error||'Could not save.';return}location.href='/'});
+</script></body></html>

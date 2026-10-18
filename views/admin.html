@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Manage logins</title><meta name="robots" content="noindex"><meta name="theme-color" content="#0e1116"><link rel="icon" href="/icon.svg">
+<style>
+*{box-sizing:border-box} body{margin:0;background:#0b0e12;color:#ece9e2;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:46rem;margin:0 auto;padding:1rem} a{color:#2fd4bf} h1{font-size:1.3rem;margin:.4rem 0} h2{font-size:1rem;margin:0 0 .6rem}
+.card{background:#151a21;border:1px solid #262d38;border-radius:12px;padding:1rem;margin-top:.8rem} .m{color:#8c95a4;font-size:.8rem}
+label{display:block;font-size:.78rem;color:#8c95a4;margin:.7rem 0 .25rem} input,select{width:100%;font:inherit;font-size:1rem;padding:.6rem .7rem;background:#1b212a;color:#ece9e2;border:1px solid #262d38;border-radius:8px}
+button{font:inherit;font-size:.85rem;padding:.5rem .9rem;border-radius:8px;border:1px solid #262d38;background:transparent;color:#ece9e2;cursor:pointer} button.pri{background:#f2a93b;color:#111;border:0;font-weight:700;margin-top:1rem;padding:.7rem 1.1rem;font-size:1rem}
+button.bad{color:#ef6b6b} .u{padding:.8rem 0;border-top:1px solid #262d38} .u:first-of-type{border-top:0} .top{display:flex;justify-content:space-between;gap:.5rem;flex-wrap:wrap}
+.tag{font-size:.66rem;font-weight:700;letter-spacing:.06em;padding:.12rem .45rem;border-radius:5px;background:#243;color:#5fd68a;margin-left:.4rem} .tag.off{background:#3d2020;color:#ef6b6b} .tag.adm{background:#4a2a12;color:#f2a93b}
+.acts{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.55rem} .temp{background:#1b212a;border:1px dashed #f2a93b;border-radius:10px;padding:.8rem;margin-top:.8rem} .temp code{font-size:1.25rem;letter-spacing:.05em;color:#f2a93b;display:block;margin:.4rem 0;word-break:break-all}
+.err{color:#ef6b6b;font-size:.85rem;min-height:1.1rem;margin-top:.5rem} [hidden]{display:none!important}
+</style></head><body><div class="wrap">
+<a href="/">&larr; Back to the dashboard</a>
+<h1>Manage logins</h1><div class="m">Only admins can see this page. Everyone signs in with email and password.</div>
+<div class="temp" id="temp" hidden><b id="temp-for"></b><div class="m">Temporary password. Send it to them privately (not in a group chat). It is shown only once, and they must choose their own at first sign in.</div><code id="temp-pw"></code><button id="copy" type="button">Copy password</button></div>
+<div class="card"><h2>Add a person</h2>
+<form id="add"><label for="n">Name</label><input id="n" maxlength="60" autocomplete="off">
+<label for="e">Email</label><input id="e" type="email" required autocomplete="off">
+<label for="r">Can they manage logins?</label><select id="r"><option value="viewer">No, view only</option><option value="admin">Yes, admin</option></select>
+<button class="pri" type="submit">Create login</button></form><div class="err" id="err" role="alert"></div></div>
+<div class="card"><h2>Everyone with a login</h2><div id="list"></div></div>
+</div>
+<script>
+const $=(i)=>document.getElementById(i);
+const mk=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e};
+async function api(method,body){const r=await fetch('/api/users',{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});let j={};try{j=await r.json()}catch(e){}if(r.status===401){location.href='/login'}return {ok:r.ok,j}}
+function showTemp(email,pw){$('temp').hidden=false;$('temp-for').textContent='Login for '+email;$('temp-pw').textContent=pw;window.scrollTo(0,0)}
+$('copy').onclick=async()=>{try{await navigator.clipboard.writeText($('temp-pw').textContent);$('copy').textContent='Copied'}catch(e){$('copy').textContent='Select and copy it by hand'}};
+async function act(email,action,extra){$('err').textContent='';const {ok,j}=await api('PUT',Object.assign({email,action},extra||{}));if(!ok)$('err').textContent=j.error||'Failed.';else if(j.temp)showTemp(email,j.temp);load()}
+async function load(){
+  const {ok,j}=await api('GET');const box=$('list');box.replaceChildren();if(!ok){box.textContent=j.error||'Could not load.';return}
+  j.users.forEach((u)=>{const d=mk('div','u');const top=mk('div','top');const l=mk('div');
+    l.appendChild(mk('b','',u.name));if(u.role==='admin')l.appendChild(mk('span','tag adm','ADMIN'));if(u.disabled)l.appendChild(mk('span','tag off','OFF'));if(u.must_change)l.appendChild(mk('span','tag','NEW PASSWORD NEEDED'));
+    l.appendChild(mk('div','m',u.email));l.appendChild(mk('div','m',u.last_login?'Last signed in '+new Date(u.last_login).toLocaleString():'Never signed in'));
+    top.appendChild(l);d.appendChild(top);const a=mk('div','acts');
+    const b1=mk('button','','Reset password');b1.onclick=()=>{if(confirm('Reset the password for '+u.email+'? They will be signed out.'))act(u.email,'reset')};a.appendChild(b1);
+    const b2=mk('button','',u.disabled?'Turn back on':'Turn off');b2.onclick=()=>act(u.email,u.disabled?'enable':'disable');a.appendChild(b2);
+    const b3=mk('button','',u.role==='admin'?'Make view only':'Make admin');b3.onclick=()=>act(u.email,'role',{role:u.role==='admin'?'viewer':'admin'});a.appendChild(b3);
+    const b4=mk('button','bad','Remove');b4.onclick=async()=>{if(!confirm('Remove '+u.email+' for good?'))return;const r=await api('DELETE',{email:u.email});if(!r.ok)$('err').textContent=r.j.error||'Failed.';load()};a.appendChild(b4);
+    d.appendChild(a);box.appendChild(d)});
+}
+$('add').onsubmit=async(e)=>{e.preventDefault();$('err').textContent='';const {ok,j}=await api('POST',{name:$('n').value,email:$('e').value,role:$('r').value});
+  if(!ok){$('err').textContent=j.error||'Failed.';return}showTemp($('e').value.trim().toLowerCase(),j.temp);$('add').reset();load()};
+load();
+</script></body></html>

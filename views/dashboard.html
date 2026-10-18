@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>D1 Dashboard</title><meta name="robots" content="noindex"><meta name="theme-color" content="#0e1116"><link rel="manifest" href="/manifest.json"><link rel="icon" href="/icon.svg">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">
+<style>:root{--font-anthropic-sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+*{box-sizing:border-box} body{margin:0;background:#0b0e12;color:#ece9e2;font-family:var(--font-anthropic-sans)}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap;max-width:76rem;margin:0 auto;padding:.7rem 1rem;font-size:.8rem;color:#8c95a4}
+.topbar a,.topbar button{color:#2fd4bf;background:none;border:0;font:inherit;cursor:pointer;text-decoration:none;padding:.3rem .2rem} .topbar .r{display:flex;gap:.9rem;align-items:center;flex-wrap:wrap}
+</style></head><body>
+<div class="topbar"><span>Signed in as __NAME__ (__EMAIL__)</span><span class="r">__ADMIN_LINK__<button type="button" id="out">Sign out</button></span></div>
+<script src="/d3.min.js"></script>
+<script>
+// Small stand-in for the data helper the dashboard page was written against.
+window.dash=(function(){
+  const IDS=['weekly','parts_lines','parts_week','lead_sources','attention'];
+  const store={}, calcs={}, subs=[]; let loaded=false;
+  const api={colors:[], data(id){return store[id]||{status:'loading',data:[]}},
+    calc(name,def){calcs[name]=def}, onData(cb){subs.push(cb); if(loaded) cb()}};
+  function run(){Object.keys(calcs).forEach(n=>{const c=calcs[n];const ins=c.inputs.map(i=>api.data(i).data);try{store[n]={status:'ok',data:c.fn.apply(null,ins)}}catch(e){store[n]={status:'error',data:[]}}});loaded=true;subs.forEach(cb=>cb())}
+  Promise.all(IDS.map(id=>fetch('/api/data?id='+id,{credentials:'same-origin'}).then(r=>{if(r.status===401){location.href='/login';throw 0}return r.json()}).then(d=>{store[id]={status:'ok',data:d}}).catch(()=>{store[id]={status:'error',data:[]}}))).then(run);
+  window.addEventListener('resize',()=>{if(loaded){clearTimeout(api._t);api._t=setTimeout(()=>subs.forEach(cb=>cb()),150)}});
+  return api;
+})();
+</script>
+<style>
+.d1 { --bg:#0e1116; --panel:#151a21; --panel2:#1b212a; --line:#262d38; --fg:#ece9e2; --mut:#8c95a4; --amber:#f2a93b; --teal:#2fd4bf; --red:#ef6b6b; --blue:#6ea8fe; --purple:#b79cf5; --green:#5fd68a;
+  background: var(--bg); color: var(--fg); font-family: var(--font-anthropic-sans); display:flex; flex-direction:column; gap:1rem; padding:1.25rem; border-radius:12px; max-width:76rem; margin-inline:auto; }
+.d1 * { box-sizing:border-box; }
+.d1 .mono, .d1 .val, .d1 td, .d1 .num { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+.d1 h1 { font-size:1.6rem; font-weight:600; margin:0; letter-spacing:-0.01em; }
+.d1 h1 span { color: var(--amber); }
+.d1 .sub { color:var(--mut); font-size:.85rem; margin:.25rem 0 0; }
+.d1 .weeks { display:flex; flex-wrap:wrap; gap:.4rem; margin-top:.9rem; }
+.d1 .weeks button, .d1 .pager button, .d1 .filters button { font:inherit; font-size:.78rem; color:var(--mut); background:transparent; border:1px solid var(--line); border-radius:999px; padding:.28rem .8rem; cursor:pointer; }
+.d1 .weeks button[aria-pressed="true"], .d1 .filters button[aria-pressed="true"] { color:#111; background:var(--amber); border-color:var(--amber); font-weight:600; }
+.d1 button:focus-visible, .d1 input:focus-visible { outline:2px solid var(--teal); outline-offset:2px; }
+.d1 .pager button:disabled { opacity:.35; cursor:default; }
+.d1 .window { color:var(--mut); font-size:.78rem; margin:0; }
+.d1 .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,11.5rem),1fr)); gap:.75rem; }
+.d1 .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:1rem; min-width:0; }
+.d1 .kpi { border-top:3px solid var(--amber); }
+.d1 .kpi.t { border-top-color:var(--teal); } .d1 .kpi.b { border-top-color:var(--blue); } .d1 .kpi.p { border-top-color:var(--purple); } .d1 .kpi.g { border-top-color:var(--green); }
+.d1 .kpi .lab { font-size:.7rem; color:var(--mut); text-transform:uppercase; letter-spacing:.07em; }
+.d1 .kpi .val { font-size:1.6rem; font-weight:600; margin-top:.35rem; min-height:2rem; }
+.d1 .kpi .chg { font-size:.74rem; color:var(--mut); margin-top:.3rem; min-height:1rem; }
+.d1 .chg.up { color:var(--green); } .d1 .chg.down { color:var(--red); }
+.d1 .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,22rem),1fr)); gap:.75rem; }
+.d1 h2 { font-size:.95rem; font-weight:600; margin:0; }
+.d1 .note { font-size:.75rem; color:var(--mut); margin:.25rem 0 .8rem; }
+.d1 .chart { position:relative; min-height:12rem; }
+.d1 .chart svg { display:block; width:100%; }
+.d1 .legend { display:flex; flex-wrap:wrap; gap:.7rem; font-size:.74rem; color:var(--mut); margin-top:.6rem; }
+.d1 .legend i { display:inline-block; width:.6rem; height:.6rem; border-radius:2px; margin-right:.35rem; }
+.d1 .tip { position:absolute; pointer-events:none; background:#0b0e12; border:1px solid var(--line); border-radius:6px; padding:.35rem .6rem; font-size:.74rem; white-space:nowrap; z-index:2; opacity:0; }
+.d1 .tip .t { color:var(--mut); }
+.d1 .axis text { fill:var(--mut); font-size:11px; }
+.d1 .tech { display:flex; flex-direction:column; gap:.9rem; }
+.d1 .tech .row .top { display:flex; justify-content:space-between; font-size:.85rem; margin-bottom:.3rem; }
+.d1 .tech .tbar { height:14px; background:var(--panel2); border-radius:7px; overflow:hidden; }
+.d1 .tech .tbar i { display:block; height:100%; border-radius:7px; }
+.d1 .tech .meta { font-size:.72rem; color:var(--mut); margin-top:.25rem; }
+.d1 .attn { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:.5rem; max-height:22rem; overflow:auto; }
+.d1 .attn li { display:flex; gap:.6rem; font-size:.8rem; line-height:1.35; padding:.55rem .65rem; background:var(--panel2); border-radius:8px; border-left:3px solid var(--mut); }
+.d1 .attn li.high { border-left-color:var(--red); } .d1 .attn li.med { border-left-color:var(--amber); } .d1 .attn li.low { border-left-color:var(--teal); }
+.d1 .attn b { color:var(--mut); font-weight:600; font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; display:block; }
+.d1 .tools { display:flex; flex-wrap:wrap; gap:.6rem; align-items:center; justify-content:space-between; margin-bottom:.8rem; }
+.d1 .filters { display:flex; flex-wrap:wrap; gap:.35rem; }
+.d1 input[type=search] { font:inherit; font-size:.8rem; background:var(--panel2); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:.35rem .7rem; min-width:13rem; }
+.d1 .order { background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:.8rem .9rem; margin-bottom:.6rem; }
+.d1 .order .head { display:flex; flex-wrap:wrap; gap:.5rem .9rem; align-items:center; font-size:.8rem; }
+.d1 .order .head .oid { font-weight:700; color:var(--amber); }
+.d1 .order .head .m { color:var(--mut); }
+.d1 .badge { font-size:.66rem; font-weight:700; letter-spacing:.06em; padding:.15rem .5rem; border-radius:5px; background:#243; color:var(--green); }
+.d1 .badge.BACKORDERED { background:#4a2a12; color:var(--amber); } .d1 .badge.NOTRACK { background:#3d2020; color:var(--red); } .d1 .badge.RETURN { background:#2a2540; color:var(--purple); } .d1 .badge.kind { background:#1d2c33; color:var(--teal); }
+.d1 .trk { font-size:.76rem; margin-top:.4rem; color:var(--teal); word-break:break-all; }
+.d1 .lines { margin-top:.5rem; display:flex; flex-direction:column; }
+.d1 .ln { display:grid; grid-template-columns:9.5rem minmax(0,1fr) 11rem 2.5rem 5.5rem; gap:.15rem .7rem; padding:.45rem .2rem; border-top:1px solid var(--line); font-size:.78rem; align-items:start; }
+.d1 .ln .pn { grid-area:auto; overflow-wrap:anywhere; } .d1 .ln .ds { overflow-wrap:anywhere; } .d1 .ln .cust { overflow-wrap:anywhere; } .d1 .ln .qt { text-align:right; } .d1 .ln .pr { text-align:right; white-space:nowrap; }
+@media (max-width: 640px) {
+  .d1 { padding:.75rem; gap:.75rem; border-radius:0; }
+  .d1 h1 { font-size:1.3rem; }
+  .d1 .kpis { grid-template-columns:repeat(2,minmax(0,1fr)); gap:.5rem; }
+  .d1 .kpi .val { font-size:1.2rem; } .d1 .card { padding:.8rem; }
+  .d1 .weeks { flex-wrap:nowrap; overflow-x:auto; padding-bottom:.4rem; } .d1 .weeks button { flex:0 0 auto; padding:.45rem .9rem; font-size:.82rem; }
+  .d1 .filters button { padding:.45rem .8rem; } .d1 input[type=search] { width:100%; min-width:0; font-size:1rem; padding:.55rem .8rem; }
+  .d1 .pager button { padding:.55rem 1.1rem; font-size:.9rem; }
+  .d1 .order { padding:.7rem; }
+  .d1 .order .head { gap:.35rem .6rem; }
+  .d1 .order .head .num { margin-left:auto; font-weight:700; }
+  .d1 .ln { grid-template-columns:minmax(0,1fr) auto; grid-template-areas:"cu pr" "pn qt" "ds ds"; gap:.1rem .6rem; padding:.6rem .1rem; }
+  .d1 .ln .cust { grid-area:cu; font-size:.88rem; } .d1 .ln .pr { grid-area:pr; font-size:.88rem; font-weight:600; }
+  .d1 .ln .pn { grid-area:pn; color:var(--teal); } .d1 .ln .qt { grid-area:qt; color:var(--mut); } .d1 .ln .ds { grid-area:ds; color:var(--mut); }
+  .d1 .attn li { font-size:.84rem; }
+}
+.d1 .cust { color:var(--fg); font-weight:600; font-family:var(--font-anthropic-sans); } .d1 .cust.stock { color:var(--purple); } .d1 .cust.un { color:var(--red); }
+.d1 .pager { display:flex; justify-content:space-between; align-items:center; font-size:.78rem; color:var(--mut); margin-top:.6rem; gap:.5rem; flex-wrap:wrap; }
+.d1 .tablewrap { overflow-x:auto; }
+.d1 table.wk { border-collapse:collapse; width:100%; font-size:.76rem; }
+.d1 table.wk th, .d1 table.wk td { text-align:right; padding:.4rem .6rem; border-bottom:1px solid var(--line); white-space:nowrap; }
+.d1 table.wk th:first-child, .d1 table.wk td:first-child, .d1 table.wk th:nth-child(2), .d1 table.wk td:nth-child(2) { text-align:left; }
+.d1 table.wk th { color:var(--mut); font-weight:500; }
+.d1 table.wk tr.open td { color:var(--mut); }
+.d1 .notes ul { margin:0; padding-left:1.1rem; color:var(--mut); font-size:.78rem; display:flex; flex-direction:column; gap:.4rem; }
+.d1 .notes li b { color:var(--fg); }
+[data-dash-source-state=empty] { color: transparent; }
+[data-dash-source-state=refreshing] { opacity:.5; }
+</style>
+
+<div class="d1">
+  <header>
+    <h1>D1 <span>Company Dashboard</span></h1>
+    <p class="sub" id="sub">Clayton and Derek, Housecall Pro counting rules, Marcone part orders.</p>
+    <div class="weeks" id="weeks" role="group" aria-label="Choose a week"></div>
+  </header>
+  <p class="window" id="window"></p>
+
+  <section class="kpis">
+    <div class="card kpi"><div class="lab">Company revenue</div><div class="val" id="k-rev" data-source="weekly" data-field="rev_company">—</div><div class="chg" id="c-rev" data-source="wow" data-field="rev_company"></div></div>
+    <div class="card kpi t"><div class="lab">Company jobs</div><div class="val" id="k-jobs" data-source="weekly" data-field="jobs_company">—</div><div class="chg" id="c-jobs" data-source="wow" data-field="jobs_company"></div></div>
+    <div class="card kpi b"><div class="lab">Clayton revenue</div><div class="val" id="k-rc" data-source="weekly" data-field="rev_clayton">—</div><div class="chg" id="c-rc" data-source="wow" data-field="rev_clayton"></div></div>
+    <div class="card kpi p"><div class="lab">Derek revenue</div><div class="val" id="k-rd" data-source="weekly" data-field="rev_derek">—</div><div class="chg" id="c-rd" data-source="wow" data-field="rev_derek"></div></div>
+    <div class="card kpi g"><div class="lab">Same-day complete</div><div class="val" id="k-sd" data-source="weekly" data-field="same_day">—</div><div class="chg" id="c-sd" data-source="wow" data-field="same_day"></div></div>
+    <div class="card kpi t"><div class="lab">Part orders</div><div class="val" id="k-po" data-source="weekly" data-field="part_order">—</div><div class="chg" id="c-po" data-source="wow" data-field="part_order"></div></div>
+    <div class="card kpi"><div class="lab">Marcone spend</div><div class="val" id="k-sp" data-source="parts_week" data-field="spend">—</div><div class="chg" id="c-sp" data-source="parts_week" data-field="orders"></div></div>
+  </section>
+
+  <section class="grid">
+    <div class="card">
+      <h2>Revenue by technician</h2>
+      <p class="note" id="tech-note">Selected week. Two man jobs count for both techs.</p>
+      <div class="tech" id="tech"></div>
+    </div>
+    <div class="card">
+      <h2>Lead sources</h2>
+      <p class="note">Jobs since 9/1 by how the customer found us.</p>
+      <div class="chart" id="ch-lead" data-source="lead_sources" style="min-height:14rem"></div>
+      <div class="legend" id="lg-lead"></div>
+    </div>
+  </section>
+
+  <section class="grid">
+    <div class="card">
+      <h2>Revenue by week</h2>
+      <p class="note">Paid tickets, plan sales left out.</p>
+      <div class="chart" id="ch-rev" data-source="weekly"></div>
+      <div class="legend" id="lg-rev"></div>
+    </div>
+    <div class="card">
+      <h2>Job mix by week</h2>
+      <p class="note">Company jobs by class, October onward.</p>
+      <div class="chart" id="ch-mix" data-source="weekly"></div>
+      <div class="legend" id="lg-mix"></div>
+    </div>
+  </section>
+
+  <section class="grid">
+    <div class="card">
+      <h2>Marcone spend by week</h2>
+      <p class="note">Order totals from your Marcone emails. Purple is van and shop stock.</p>
+      <div class="chart" id="ch-sp" data-source="parts_week"></div>
+      <div class="legend" id="lg-sp"></div>
+    </div>
+    <div class="card">
+      <h2>Needs attention</h2>
+      <p class="note">Things to check or decide. Nothing here changes on its own.</p>
+      <ul class="attn" id="attn" data-source="attention"></ul>
+    </div>
+  </section>
+
+  <section class="card" id="parts">
+    <h2>Parts &amp; orders (Marcone)</h2>
+    <p class="note" id="parts-note">From the Marcone emails in Gmail, matched to the customer on the Housecall Pro job.</p>
+    <div class="tools">
+      <div class="filters" id="flt" role="group" aria-label="Filter orders"></div>
+      <input type="search" id="q" placeholder="Search customer, part, order or tracking" aria-label="Search orders">
+    </div>
+    <div id="orders" data-source="parts_lines"></div>
+    <div class="pager"><span id="pg-info"></span><span><button type="button" id="pg-prev">Previous</button> <button type="button" id="pg-next">Next</button></span></div>
+  </section>
+
+  <section class="card">
+    <h2>All weeks</h2>
+    <p class="note">One row per week. Greyed rows are still open.</p>
+    <div class="tablewrap">
+      <table class="wk" id="tbl" data-source="weekly" data-row-key="week">
+        <thead><tr>
+          <th data-field="week">Week</th><th data-field="dates">Dates</th><th data-field="rev_company">Company rev.</th><th data-field="rev_clayton">Clayton</th><th data-field="rev_derek">Derek</th>
+          <th data-field="jobs_company">Jobs</th><th data-field="same_day">Same-day</th><th data-field="part_order">Part order</th><th data-field="part_install">Part install</th><th data-field="incomplete">Incomplete</th><th data-field="no_revenue">No rev.</th>
+        </tr></thead><tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card notes">
+    <h2>How to read this</h2>
+    <p class="note">What is counted and what is still missing.</p>
+    <ul>
+      <li><b>Company totals</b> count a two man job once. Each tech's own numbers count it for both.</li>
+      <li><b>Weeks</b> run Monday to Sunday and are cut at month end, so Sep W5 and Oct W1 are short.</li>
+      <li><b>Revenue</b> is paid invoices. Platinum plan sales (paid about $1,500 or more) are not jobs and not revenue.</li>
+      <li><b>Job classes</b> follow the charge rules, not the tags. Before October they are not shown.</li>
+      <li><b>Derek's numbers</b> are computed from Housecall Pro and should be checked once against the KPI sheet. Clayton's September rows are the verified ones.</li>
+      <li><b>Labor and cost of goods</b> are not shown here. Labor will get its own private tab. Cost of goods starts 10/19 once unit costs are filled in.</li>
+      <li><b>Marcone</b> is read from email. A customer shows as Unmatched when the job could not be found, and STOCK means van or shop stock.</li>
+    </ul>
+  </section>
+</div>
+
+<script>
+(function () {
+  const money = d3.format('$,.2f'), money0 = d3.format('$,.0f'), num = d3.format(','), pct = d3.format('+.0%');
+  const root = document.querySelector('.d1');
+  const C = { amber:'#f2a93b', teal:'#2fd4bf', blue:'#6ea8fe', purple:'#b79cf5', red:'#ef6b6b', green:'#5fd68a', grey:'#6b7482' };
+  const $ = (id) => document.getElementById(id);
+  let sel = null, page = 0, filt = 'ALL', query = '';
+  const PER = 5;
+
+  dash.calc('wow', {
+    inputs: ['weekly'],
+    title: 'Change from the week before',
+    description: 'Each week compared with the row just above it in the weekly table.',
+    fn: (weekly) => weekly.map((r, i) => {
+      const p = i > 0 ? weekly[i - 1] : null;
+      const out = { week: r.week };
+      for (const k of ['rev_company','jobs_company','rev_clayton','rev_derek','same_day','part_order']) {
+        const a = Number(r[k]), b = p ? Number(p[k]) : NaN;
+        out[k] = (r[k] !== null && r[k] !== '' && p && p[k] !== null && p[k] !== '' && b !== 0) ? (a - b) / b : null;
+      }
+      return out;
+    }),
+  });
+
+  const n_ = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
+  const fm = (k, v) => {
+    if (v === null || v === undefined || v === '') return '—';
+    return /rev|labor|spend/.test(k) ? money(Number(v)) : num(Number(v));
+  };
+  const clear = (el) => el.replaceChildren();
+  const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+
+  function showTip(host, ev, lines) {
+    const t = host.querySelector('.tip'); clear(t);
+    lines.forEach((s, i) => t.appendChild(mk('div', i === 0 ? 't' : '', s)));
+    const hr = host.getBoundingClientRect();
+    let x = ev.clientX - hr.left + 12; const y = ev.clientY - hr.top - 8;
+    t.style.opacity = 1;
+    const w = t.offsetWidth; if (x + w > hr.width) x = Math.max(0, ev.clientX - hr.left - w - 12);
+    t.style.left = x + 'px'; t.style.top = Math.max(0, y) + 'px';
+  }
+  const hideTip = (host) => { host.querySelector('.tip').style.opacity = 0; };
+  function frame(host, h) {
+    clear(host);
+    const w = Math.max(host.clientWidth, 260);
+    const svg = d3.select(host).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${w} ${h}`).attr('height', h);
+    host.appendChild(mk('div', 'tip'));
+    return { svg, w };
+  }
+  function lw_(svg, strs) {
+    let m = 0; const tmp = svg.append('text').attr('font-size', 11).attr('opacity', 0);
+    strs.forEach((s) => { tmp.text(s); m = Math.max(m, tmp.node().getComputedTextLength()); }); tmp.remove(); return m;
+  }
+  function legend(el, items) {
+    clear(el);
+    items.forEach(([label, col]) => { const sp = mk('span'); const i = mk('i'); i.style.background = col; sp.appendChild(i); sp.appendChild(document.createTextNode(label)); el.appendChild(sp); });
+  }
+
+  function barChart(host, rows, series, opts) {
+    const h = 240; const { svg, w } = frame(host, h);
+    const stack = !!opts.stack, keys = series.map((s) => s.key);
+    const totals = rows.map((r) => stack ? d3.sum(keys, (k) => n_(r[k]) || 0) : d3.max(keys, (k) => n_(r[k]) || 0));
+    const y = d3.scaleLinear([0, Math.max(1, d3.max(totals)) * 1.08], [h - 28, 12]).nice(4);
+    const ticks = y.ticks(4), lw = lw_(svg, ticks.map(opts.fmt)) + 10;
+    const x = d3.scaleBand(rows.map((r) => r.week), [lw + 4, w - 8]).padding(0.28);
+    const g = svg.append('g');
+    g.selectAll('line').data(ticks).join('line').attr('x1', lw + 4).attr('x2', w - 8).attr('y1', (d) => y(d)).attr('y2', (d) => y(d)).attr('stroke', '#262d38');
+    g.append('g').attr('class', 'axis').selectAll('text').data(ticks).join('text').attr('x', lw).attr('y', (d) => y(d) + 4).attr('text-anchor', 'end').text(opts.fmt);
+    const every = x.bandwidth() < 30 ? 2 : 1;
+    g.append('g').attr('class', 'axis').selectAll('text').data(rows).join('text').attr('x', (r) => x(r.week) + x.bandwidth() / 2).attr('y', h - 8).attr('text-anchor', 'middle').text((r, i) => (i % every === 0 ? r.week : ''));
+    const grp = g.selectAll('g.col').data(rows).join('g').attr('class', 'col').attr('transform', (r) => `translate(${x(r.week)},0)`);
+    const sub = stack ? null : d3.scaleBand(keys, [0, x.bandwidth()]).padding(0.1);
+    grp.each(function (r) {
+      const gg = d3.select(this); let acc = 0;
+      series.forEach((s) => {
+        const v = n_(r[s.key]); if (v === null) return;
+        const bw = stack ? x.bandwidth() : sub.bandwidth(), bx = stack ? 0 : sub(s.key);
+        const y1 = stack ? y(acc + v) : y(v), y0 = stack ? y(acc) : y(0); acc += v;
+        gg.append('rect').attr('x', bx).attr('y', y1).attr('width', bw).attr('height', Math.max(0, y0 - y1)).attr('rx', 3).attr('fill', s.c).attr('opacity', r.status === 'open' ? 0.55 : 1);
+      });
+      gg.append('rect').attr('x', 0).attr('y', 0).attr('width', x.bandwidth()).attr('height', h - 24).attr('fill', 'transparent')
+        .on('mousemove', (ev) => showTip(host, ev, [r.week + ' (' + r.dates + ')' + (r.status === 'open' ? ', so far' : ''), ...series.map((s) => s.label + ': ' + (n_(r[s.key]) === null ? 'not available' : opts.fmtTip(n_(r[s.key]))))]))
+        .on('mouseleave', () => hideTip(host));
+    });
+  }
+
+  function donut(host, rows, lg) {
+    const h = 220; const { svg, w } = frame(host, h);
+    const cols = [C.amber, C.teal, C.blue, C.purple, C.green, C.red, C.grey];
+    const total = d3.sum(rows, (r) => Number(r.jobs));
+    const R = Math.min(w, h) / 2 - 6;
+    const g = svg.append('g').attr('transform', `translate(${w / 2},${h / 2})`);
+    const arcs = d3.pie().value((r) => Number(r.jobs)).sort(null).padAngle(0.015)(rows);
+    const arc = d3.arc().innerRadius(R * 0.6).outerRadius(R);
+    g.selectAll('path').data(arcs).join('path').attr('d', arc).attr('fill', (d, i) => cols[i % cols.length])
+      .on('mousemove', (ev, d) => showTip(host, ev, [d.data.source, num(d.data.jobs) + ' jobs, ' + d3.format('.0%')(d.data.jobs / total)]))
+      .on('mouseleave', () => hideTip(host));
+    g.append('text').attr('text-anchor', 'middle').attr('y', 4).attr('fill', '#ece9e2').attr('font-size', 22).attr('font-weight', 600).text(num(total));
+    g.append('text').attr('text-anchor', 'middle').attr('y', 22).attr('fill', '#8c95a4').attr('font-size', 11).text('jobs');
+    legend(lg, rows.map((r, i) => [r.source + ' (' + num(r.jobs) + ')', cols[i % cols.length]]));
+  }
+
+  function groupOrders(lines) {
+    const map = new Map();
+    lines.forEach((l) => {
+      if (!map.has(l.order)) map.set(l.order, { order: l.order, date: l.date, time: l.time, warehouse: l.warehouse, po: l.po, tech: l.tech, status: l.status, tracking: l.tracking, kind: l.kind, fills_bo: l.fills_bo, total: Number(l.order_total), lines: [] });
+      map.get(l.order).lines.push(l);
+    });
+    return Array.from(map.values()).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
+  }
+  const statusKey = (s) => s.replace(/\s/g, '').replace('NOTRACKING', 'NOTRACK');
+  const statusLabel = (o) => o.status;
+  const fmtDate = (s) => d3.timeFormat('%b %-d')(new Date(s + 'T12:00:00'));
+
+  function drawOrders(lines) {
+    const all = groupOrders(lines);
+    const counts = { ALL: all.length };
+    all.forEach((o) => { counts[o.status] = (counts[o.status] || 0) + 1; });
+    const fl = $('flt'); clear(fl);
+    ['ALL', 'BACKORDERED', 'NO TRACKING', 'SHIPPED', 'RETURN'].forEach((s) => {
+      if (s !== 'ALL' && !counts[s]) return;
+      const b = mk('button', '', (s === 'ALL' ? 'All' : s.charAt(0) + s.slice(1).toLowerCase()) + ' (' + (counts[s] || 0) + ')');
+      b.type = 'button'; b.setAttribute('aria-pressed', s === filt ? 'true' : 'false');
+      b.addEventListener('click', () => { filt = s; page = 0; drawOrders(lines); });
+      fl.appendChild(b);
+    });
+    const q = query.trim().toLowerCase();
+    const list = all.filter((o) => (filt === 'ALL' || o.status === filt) && (!q || [o.order, o.po, o.tech, o.tracking, o.warehouse].join(' ').toLowerCase().includes(q) || o.lines.some((l) => (l.customer + ' ' + l.part + ' ' + l.desc).toLowerCase().includes(q))));
+    const pages = Math.max(1, Math.ceil(list.length / PER));
+    if (page >= pages) page = pages - 1;
+    const box = $('orders'); clear(box);
+    list.slice(page * PER, page * PER + PER).forEach((o) => {
+      const card = mk('div', 'order');
+      const head = mk('div', 'head');
+      head.appendChild(mk('span', 'oid mono', '#' + o.order));
+      head.appendChild(mk('span', 'm', fmtDate(o.date) + ' ' + o.time));
+      head.appendChild(mk('span', 'm', o.warehouse));
+      head.appendChild(mk('span', 'm', 'PO ' + o.po));
+      head.appendChild(mk('span', 'm', o.tech === 'Unassigned' ? 'No tech on PO' : o.tech));
+      const b = mk('span', 'badge ' + statusKey(o.status), statusLabel(o)); head.appendChild(b);
+      if (o.kind !== 'order') head.appendChild(mk('span', 'badge kind', 'FILLS BACKORDER' + (o.fills_bo ? ' ' + o.fills_bo : '')));
+      head.appendChild(mk('span', 'num', money(o.total)));
+      card.appendChild(head);
+      if (o.tracking) card.appendChild(mk('div', 'trk mono', 'Tracking ' + o.tracking));
+      const t = mk('div', 'lines');
+      o.lines.forEach((l) => {
+        const tr = mk('div', 'ln');
+        tr.appendChild(mk('div', 'pn mono', l.part));
+        tr.appendChild(mk('div', 'ds', l.desc + (l.make ? ' (' + l.make + ')' : '') + (Number(l.backordered) > 0 ? ', ' + l.backordered + ' on backorder' : '')));
+        tr.appendChild(mk('div', 'cust' + (l.stock === true || l.stock === 'true' ? ' stock' : l.match === 'unmatched' ? ' un' : ''), l.customer + (l.match === 'guess' ? ' (guess)' : '')));
+        tr.appendChild(mk('div', 'qt', 'x' + l.qty));
+        tr.appendChild(mk('div', 'pr mono', money(Number(l.line_total))));
+        t.appendChild(tr);
+      });
+      card.appendChild(t); box.appendChild(card);
+    });
+    if (!list.length) box.appendChild(mk('p', 'note', 'No orders match.'));
+    $('pg-info').textContent = list.length + ' orders captured so far · Page ' + (page + 1) + ' of ' + pages;
+    $('pg-prev').disabled = page === 0; $('pg-next').disabled = page >= pages - 1;
+    $('pg-prev').onclick = () => { page = Math.max(0, page - 1); drawOrders(lines); };
+    $('pg-next').onclick = () => { page = Math.min(pages - 1, page + 1); drawOrders(lines); };
+  }
+  $('q').addEventListener('input', (e) => { query = e.target.value; page = 0; const d = dash.data('parts_lines'); if (d.status === 'ok') drawOrders(d.data); });
+
+  function drawTech(cur) {
+    const el = $('tech'); clear(el);
+    const mx = Math.max(cur.rev_clayton, cur.rev_derek, 1);
+    [['Clayton', cur.rev_clayton, cur.jobs_clayton, C.amber], ['Derek', cur.rev_derek, cur.jobs_derek, C.teal]].forEach(([nm, rev, jobs, col]) => {
+      const row = mk('div', 'row'); const top = mk('div', 'top');
+      top.appendChild(mk('span', '', nm)); top.appendChild(mk('span', 'num', money(Number(rev))));
+      const bar = mk('div', 'tbar'); const i = mk('i'); i.style.width = (100 * Number(rev) / mx) + '%'; i.style.background = col; bar.appendChild(i);
+      row.appendChild(top); row.appendChild(bar);
+      row.appendChild(mk('div', 'meta', num(jobs) + ' jobs' + (jobs ? ', ' + money(Number(rev) / jobs) + ' per job' : '')));
+      el.appendChild(row);
+    });
+    $('tech-note').textContent = cur.week + ' (' + cur.dates + '). Two man jobs this week: ' + cur.two_man_jobs + '. Company total counts them once.';
+  }
+
+  function draw() {
+    const W = dash.data('weekly'), PW = dash.data('parts_week');
+    if (W.status !== 'ok' || !W.data.length) return;
+    const rows = W.data;
+    const closed = rows.filter((r) => r.status === 'closed');
+    if (!sel || !rows.some((r) => r.week === sel)) sel = closed.length ? closed[closed.length - 1].week : rows[rows.length - 1].week;
+    const cur = rows.find((r) => r.week === sel);
+    const wk = $('weeks'); clear(wk);
+    rows.forEach((r) => { const b = mk('button', '', r.week + (r.status === 'open' ? ' (open)' : '')); b.type = 'button'; b.setAttribute('aria-pressed', r.week === sel ? 'true' : 'false'); b.addEventListener('click', () => { sel = r.week; draw(); }); wk.appendChild(b); });
+    $('window').textContent = cur.week + ', ' + cur.dates + (cur.status === 'open' ? '. Still open, numbers are so far.' : '.') + ' Changes compare with the week before, and short weeks are not like for like.';
+    const wh = 'week=' + encodeURIComponent(sel);
+    [['k-rev','rev_company'],['k-jobs','jobs_company'],['k-rc','rev_clayton'],['k-rd','rev_derek'],['k-sd','same_day'],['k-po','part_order']].forEach(([id, k]) => { const el = $(id); el.setAttribute('data-where', wh); el.textContent = fm(k, cur[k]); });
+    const wow = dash.data('wow'); const wr = wow.status === 'ok' ? wow.data.find((r) => r.week === sel) : null;
+    [['c-rev','rev_company',false],['c-jobs','jobs_company',false],['c-rc','rev_clayton',false],['c-rd','rev_derek',false],['c-sd','same_day',false],['c-po','part_order',false]].forEach(([id, k, cost]) => {
+      const el = $(id); el.setAttribute('data-where', wh); el.className = 'chg';
+      const v = wr ? wr[k] : null;
+      if (v === null || v === undefined) { el.textContent = 'no week before to compare'; return; }
+      el.textContent = pct(v) + ' vs week before';
+      if (Math.abs(v) >= 0.005) el.classList.add((v > 0) !== cost ? 'up' : 'down');
+    });
+    if (PW.status === 'ok') {
+      const p = PW.data.find((r) => r.week === sel);
+      $('k-sp').setAttribute('data-where', wh); $('c-sp').setAttribute('data-where', wh);
+      $('k-sp').textContent = p ? money(Number(p.spend)) : '—';
+      $('c-sp').textContent = p ? p.orders + ' orders' + (Number(p.backordered) ? ', ' + p.backordered + ' backordered' : '') : '';
+    }
+    drawTech(cur);
+    barChart($('ch-rev'), rows, [{ key: 'rev_clayton', label: 'Clayton', c: C.amber }, { key: 'rev_derek', label: 'Derek', c: C.teal }], { fmt: money0, fmtTip: money });
+    legend($('lg-rev'), [['Clayton', C.amber], ['Derek', C.teal]]);
+    const oct = rows.filter((r) => n_(r.same_day) !== null);
+    const ms = [{ key: 'same_day', label: 'Same-day complete', c: C.green }, { key: 'part_order', label: 'Part order', c: C.amber }, { key: 'part_install', label: 'Part install', c: C.blue }, { key: 'incomplete', label: 'Incomplete', c: C.red }, { key: 'no_revenue', label: 'No revenue', c: C.grey }, { key: 'other', label: 'Other', c: C.purple }];
+    barChart($('ch-mix'), oct, ms, { stack: true, fmt: num, fmtTip: num });
+    legend($('lg-mix'), ms.map((s) => [s.label, s.c]));
+    if (PW.status === 'ok') {
+      const prow = PW.data.map((r) => { const m = rows.find((x) => x.week === r.week) || {}; return Object.assign({}, r, { dates: m.dates || '', status: m.status, cust: Number(r.spend) - Number(r.stock_spend) }); });
+      const ps = [{ key: 'cust', label: 'Customer parts', c: C.amber }, { key: 'stock_spend', label: 'Stock', c: C.purple }];
+      barChart($('ch-sp'), prow, ps, { stack: true, fmt: money0, fmtTip: money });
+      legend($('lg-sp'), ps.map((s) => [s.label, s.c]));
+    }
+    const tb = document.querySelector('#tbl tbody'); clear(tb);
+    ['week','dates','rev_company','rev_clayton','rev_derek','jobs_company','same_day','part_order','part_install','incomplete','no_revenue'].forEach(() => {});
+    rows.forEach((r) => {
+      const tr = mk('tr', r.status === 'open' ? 'open' : ''); tr.setAttribute('data-key', r.week);
+      ['week','dates','rev_company','rev_clayton','rev_derek','jobs_company','same_day','part_order','part_install','incomplete','no_revenue'].forEach((k) => tr.appendChild(mk('td', '', k === 'week' ? r.week : k === 'dates' ? r.dates : fm(k, r[k]))));
+      tb.appendChild(tr);
+    });
+  }
+
+  dash.onData(() => {
+    draw();
+    const L = dash.data('lead_sources'); if (L.status === 'ok' && L.data.length) donut($('ch-lead'), L.data, $('lg-lead'));
+    const A = dash.data('attention');
+    if (A.status === 'ok') { const ul = $('attn'); clear(ul); A.data.forEach((a) => { const li = mk('li', a.level); const d = mk('div'); d.appendChild(mk('b', '', a.area)); d.appendChild(document.createTextNode(a.item)); li.appendChild(d); ul.appendChild(li); }); }
+    const P = dash.data('parts_lines'); if (P.status === 'ok') drawOrders(P.data);
+  });
+})();
+</script>
+
+<script>document.getElementById('out').onclick=async()=>{await fetch('/api/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});location.href='/login'}</script>
+</body></html>
